@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Standalone Detention Management Portal</title>
+  
+  <!-- CSS Framework & Excel Parser Library -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    body { padding: 24px; background-color: #f8f9fa; font-family: system-ui, -apple-system, sans-serif; }
+    .card { border: none; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .badge-lates { background-color: #dc3545; color: #fff; font-size: 0.85rem; }
+    .badge-day { background-color: #e2e3e5; color: #41464b; }
+    @media print {
+      .no-print { display: none !important; }
+      body { padding: 0; background: #fff; }
+      .card { box-shadow: none; }
+      select, input { border: none !important; background: transparent !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container-fluid">
+    <!-- Header Controls -->
+    <div class="d-flex justify-content-between align-items-center mb-4 p-3 bg-white rounded shadow-sm no-print">
+      <div>
+        <h3 class="m-0 fw-bold">Detention Management Portal</h3>
+        <small class="text-muted">Standalone Browser App (Multi-File Support)</small>
+      </div>
+      <div>
+        <label class="btn btn-primary me-2">
+          Upload Excel File(s) 
+          <!-- 'multiple' attribute enables selecting more than one file -->
+          <input type="file" id="excelFileInput" accept=".xlsx, .xls" multiple hidden onchange="handleFileUpload(event)">
+        </label>
+        <button class="btn btn-outline-secondary me-2" onclick="exportToCSV()">Export CSV</button>
+        <button class="btn btn-outline-danger me-2" onclick="clearData()">Clear Data</button>
+        <button class="btn btn-outline-dark" onclick="window.print()">Print PDF</button>
+      </div>
+    </div>
+
+    <!-- Day Filters -->
+    <div class="d-flex justify-content-between align-items-center mb-3 no-print">
+      <div class="btn-group" role="group">
+        <button type="button" class="btn btn-outline-dark active" onclick="filterTable('All', this)">All Students</button>
+        <button type="button" class="btn btn-outline-dark" onclick="filterTable('Tuesday', this)">Tuesday</button>
+        <button type="button" class="btn btn-outline-dark" onclick="filterTable('Thursday', this)">Thursday</button>
+      </div>
+      <span id="recordCount" class="text-muted small">0 student(s) loaded</span>
+    </div>
+
+    <!-- Main Table -->
+    <div class="card p-3">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Student Name</th>
+              <th>Student ID</th>
+              <th>Year</th>
+              <th>Total Lates</th>
+              <th>Assigned Day</th>
+              <th style="width: 180px;">Attendance Status</th>
+              <th style="width: 250px;">Officer Comments</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr><td colspan="7" class="text-center py-4 text-muted">No data loaded. Upload Excel file(s) to start.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let studentRecords = JSON.parse(localStorage.getItem('detention_data')) || [];
+
+    window.onload = () => renderTable('All');
+
+    // Asynchronously processes multiple files at once
+    async function handleFileUpload(event) {
+      const files = Array.from(event.target.files);
+      if (files.length === 0) return;
+
+      let totalAddedCount = 0;
+
+      for (const file of files) {
+        const addedCount = await parseExcelFile(file);
+        totalAddedCount += addedCount;
+      }
+
+      saveToStorage();
+      renderTable('All');
+      alert(`Import complete! Processed ${files.length} file(s) and added ${totalAddedCount} new student(s) with >60 lates.`);
+      
+      // Reset input to allow re-uploading the same files if needed
+      event.target.value = '';
+    }
+
+    function parseExcelFile(file) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+
+          // Target Sheet 2 (Index 1) if available, fallback to Sheet 1
+          const sheetName = workbook.SheetNames[1] || workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+          const added = processExcelData(jsonData);
+          resolve(added);
+        };
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    function processExcelData(rows) {
+      let addedCount = 0;
+      const existingIDs = studentRecords.map(r => r.id.toString());
+
+      // Assuming Row 1 is Header. Col 0: Name, Col 1: ID, Col 2: Year, Col 3: Lates
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length < 4) continue;
+
+        const name = row[0];
+        const studentId = row[1] ? row[1].toString() : '';
+        const year = row[2];
+        const lates = Number(row[3]);
+
+        // Filter: Lates > 60 & no duplicates across any uploaded files
+        if (lates > 60 && studentId && !existingIDs.includes(studentId)) {
+          const assignedDay = (studentRecords.length % 2 === 0) ? 'Tuesday' : 'Thursday';
+          studentRecords.push({
+            id: studentId,
+            name: name,
+            year: year,
+            lates: lates,
+            day: assignedDay,
+            status: 'Pending',
+            comments: ''
+          });
+          existingIDs.push(studentId);
+          addedCount++;
+        }
+      }
+      return addedCount;
+    }
+
+    function renderTable(dayFilter, element) {
+      if (element) {
+        document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
+        element.classList.add('active');
+      }
+
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+
+      const filtered = dayFilter === 'All' 
+        ? studentRecords 
+        : studentRecords.filter(r => r.day.toLowerCase() === dayFilter.toLowerCase());
+
+      document.getElementById('recordCount').innerText = `${filtered.length} student(s) showing`;
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No records found.</td></tr>';
+        return;
+      }
+
+      filtered.forEach((row) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>${row.name}</strong></td>
+          <td>${row.id}</td>
+          <td>${row.year}</td>
+          <td><span class="badge rounded-pill badge-lates">${row.lates}</span></td>
+          <td><span class="badge badge-day">${row.day}</span></td>
+          <td>
+            <select class="form-select form-select-sm" onchange="updateRecord('${row.id}', 'status', this.value)">
+              <option value="Pending" ${row.status === 'Pending' ? 'selected' : ''}>Pending</option>
+              <option value="Present" ${row.status === 'Present' ? 'selected' : ''}>Present</option>
+              <option value="Unexcused Absence" ${row.status === 'Unexcused Absence' ? 'selected' : ''}>Unexcused Absence</option>
+              <option value="Rescheduled" ${row.status === 'Rescheduled' ? 'selected' : ''}>Rescheduled</option>
+            </select>
+          </td>
+          <td>
+            <input type="text" class="form-control form-control-sm" value="${row.comments || ''}" 
+                   placeholder="Add notes..." onchange="updateRecord('${row.id}', 'comments', this.value)">
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function updateRecord(id, field, value) {
+      const student = studentRecords.find(r => r.id.toString() === id.toString());
+      if (student) {
+        student[field] = value;
+        saveToStorage();
+      }
+    }
+
+    function saveToStorage() {
+      localStorage.setItem('detention_data', JSON.stringify(studentRecords));
+    }
+
+    function clearData() {
+      if (confirm("Are you sure you want to clear all stored student data?")) {
+        studentRecords = [];
+        localStorage.removeItem('detention_data');
+        renderTable('All');
+      }
+    }
+
+    function exportToCSV() {
+      if (studentRecords.length === 0) return alert('No data to export.');
+
+      let csv = 'Student Name,Student ID,Year Group,Total Lates,Assigned Day,Status,Comments\n';
+      studentRecords.forEach(r => {
+        csv += `"${r.name}","${r.id}","${r.year}","${r.lates}","${r.day}","${r.status}","${r.comments || ''}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `Detention_Report_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+    }
+  </script>
+</body>
+</html>
