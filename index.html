@@ -23,12 +23,14 @@
   .attendance-check { display: flex; gap: 12px; align-items: center; }
   .prior-note { font-size: 11px; color: #6c757d; max-width: 220px; display:block; }
   #fileList { font-size: 12px; color: #6c757d; margin-top: 8px; }
+  .print-only { display: none; }
   @media print {
     .no-print { display: none !important; }
     body { padding: 0; background: #fff; }
     .card { box-shadow: none; }
     input, button { border: none !important; background: transparent !important; }
     .btn-day-action { display: none !important; }
+    .print-only { display: block !important; margin-bottom: 16px; }
   }
 </style>
 </head>
@@ -44,10 +46,16 @@
     <div class="d-flex flex-wrap gap-2">
       <button class="btn btn-warning fw-bold text-dark" onclick="randomAssign('Tuesday')">🎲 Randomly assign 25 → Tuesday</button>
       <button class="btn btn-warning fw-bold text-dark" onclick="randomAssign('Thursday')">🎲 Randomly assign 25 → Thursday</button>
+      <button class="btn btn-outline-primary" onclick="printRoll('Tuesday')">🖨️ Print Tuesday roll</button>
+      <button class="btn btn-outline-success" onclick="printRoll('Thursday')">🖨️ Print Thursday roll</button>
       <button class="btn btn-outline-secondary" onclick="exportToCSV()">Export CSV</button>
       <button class="btn btn-outline-dark" onclick="exportToPDF()">Download PDF</button>
       <button class="btn btn-outline-danger" onclick="clearData()">Clear Data</button>
     </div>
+  </div>
+
+  <div class="print-only">
+    <h3 id="printTitle" class="fw-bold m-0"></h3>
   </div>
 
   <div class="card p-3 mb-3 no-print">
@@ -55,11 +63,19 @@
       <span class="fw-bold text-primary">Click to select the attendance workbooks</span> or drag &amp; drop them here
       <input type="file" id="excelFileInput" accept=".xlsx,.xls" multiple onchange="handleFileUpload(event)" style="display: none;">
     </div>
+    <div class="small text-muted mt-1">
+      Dragging files straight from the Google Drive website usually won't work — Drive's web UI doesn't hand over the actual file, only a link to it.
+      Download the files to your computer first (or use Drive for Desktop / File Stream, which shows as a normal folder), then drag them in or use "Click to select" above.
+    </div>
     <div id="fileList"></div>
     <div class="d-flex align-items-end gap-3 mt-3 flex-wrap">
       <div>
         <label class="form-label small text-muted mb-1" for="thresholdInput">Lates threshold (greater than)</label>
         <input type="number" class="form-control form-control-sm" id="thresholdInput" value="60" min="0" style="width:100px;">
+      </div>
+      <div>
+        <label class="form-label small text-muted mb-1" for="weekInput">Current week (e.g. Term 3 Week 5)</label>
+        <input type="text" class="form-control form-control-sm" id="weekInput" placeholder="Term 3 Week 5" style="width:180px;" onchange="updateWeek(this.value)">
       </div>
       <button class="btn btn-primary btn-sm" onclick="rebuildRoster()">Update list</button>
       <div id="statusMsg" class="small"></div>
@@ -98,13 +114,14 @@
             <th>Tutor Class</th>
             <th class="sortable" onclick="sortTable('year')">Year <span id="sort-year" class="sort-icon">↕</span></th>
             <th class="sortable" onclick="sortTable('lates')">Total Lates <span id="sort-lates" class="sort-icon">↕</span></th>
+            <th>Week</th>
             <th>Assign Day</th>
             <th id="th-attendance" style="width: 170px;">Attendance</th>
             <th style="width: 220px;">Officer Comments</th>
           </tr>
         </thead>
         <tbody id="tableBody">
-          <tr><td colspan="9" class="text-center py-4 text-muted">No records found. Upload attendance workbooks above.</td></tr>
+          <tr><td colspan="10" class="text-center py-4 text-muted">No records found. Upload attendance workbooks above.</td></tr>
         </tbody>
       </table>
     </div>
@@ -115,6 +132,7 @@
 const STORAGE_KEY = 'kamar-detention-state';
 let studentRecords = [];   // [{id, firstName, lastName, tutorClass, year, lates, priorNote, day, attendance, comments}]
 let threshold = 60;
+let currentWeek = '';
 let loadedWorkbooks = [];  // [{name, workbook}]
 let currentFilter = 'All';
 let currentSortColumn = null;
@@ -128,10 +146,18 @@ async function loadFromStorage(){
       const parsed = JSON.parse(res.value);
       studentRecords = parsed.studentRecords || [];
       threshold = parsed.threshold || 60;
+      currentWeek = parsed.currentWeek || '';
     }
   }catch(e){ /* nothing saved yet */ }
   document.getElementById('thresholdInput').value = threshold;
   document.getElementById('thresholdLabel').textContent = threshold;
+  document.getElementById('weekInput').value = currentWeek;
+  renderTable();
+}
+
+function updateWeek(value){
+  currentWeek = value;
+  saveToStorage();
   renderTable();
 }
 
@@ -140,7 +166,7 @@ function saveToStorage(){
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     try{
-      await window.storage.set(STORAGE_KEY, JSON.stringify({studentRecords, threshold}), false);
+      await window.storage.set(STORAGE_KEY, JSON.stringify({studentRecords, threshold, currentWeek}), false);
     }catch(e){ console.error('Save failed', e); }
   }, 200);
 }
@@ -157,6 +183,8 @@ function handleFileDrop(e){
   e.preventDefault();
   if(e.dataTransfer.files && e.dataTransfer.files.length > 0){
     loadFiles(Array.from(e.dataTransfer.files));
+  } else {
+    setStatus("Couldn't read a file from that drop — this usually happens when dragging straight from the Google Drive website, since Drive only hands over a link, not the file itself. Download the file to your computer first, or use \"Click to select\" and browse to it.", 'err');
   }
 }
 function handleFileUpload(e){
@@ -346,6 +374,17 @@ function filterTable(f, el){
   renderTable();
 }
 
+function printRoll(day){
+  currentFilter = day;
+  document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
+  const match = Array.from(document.querySelectorAll('.btn-group .btn')).find(b => b.textContent.trim() === day);
+  if(match) match.classList.add('active');
+  const dateStr = new Date().toLocaleDateString(undefined, {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+  document.getElementById('printTitle').textContent = `${day} Detention Roll` + (currentWeek ? ` — ${currentWeek}` : '') + ` — ${dateStr}`;
+  renderTable();
+  setTimeout(() => window.print(), 50);
+}
+
 function sortTable(col){
   if(currentSortColumn === col){ isAscending = !isAscending; }
   else{ currentSortColumn = col; isAscending = col !== 'lates'; }
@@ -380,7 +419,7 @@ function renderTable(){
   document.getElementById('recordCount').innerText = `${filtered.length} student(s) showing (${studentRecords.length} total loaded)`;
 
   if(filtered.length === 0){
-    tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-muted">No records found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-muted">No records found.</td></tr>`;
     return;
   }
 
@@ -396,6 +435,7 @@ function renderTable(){
       <td>${escapeHtml(row.tutorClass)}</td>
       <td>${row.year || '—'}</td>
       <td><span class="badge rounded-pill badge-lates">${row.lates}</span></td>
+      <td>${escapeHtml(currentWeek) || '—'}</td>
       <td>
         <div class="btn-group btn-group-sm btn-day-action" role="group">
           <button type="button" class="btn ${isTue ? 'btn-primary' : 'btn-outline-primary'}" onclick="setStudentDay('${row.id}', 'Tuesday')">Tue</button>
@@ -443,9 +483,9 @@ function clearData(){
 }
 
 function exportRows(){
-  return studentRecords.map(r => [r.firstName, r.lastName, r.id, r.tutorClass, r.year || '', r.lates, r.day, r.attendance, r.comments || '']);
+  return studentRecords.map(r => [r.firstName, r.lastName, r.id, r.tutorClass, r.year || '', r.lates, currentWeek || '', r.day, r.attendance, r.comments || '']);
 }
-const EXPORT_HEADER = ['First Name','Last Name','Student ID','Tutor Class','Year','Total Lates','Assigned Day','Attendance','Comments'];
+const EXPORT_HEADER = ['First Name','Last Name','Student ID','Tutor Class','Year','Total Lates','Week','Assigned Day','Attendance','Comments'];
 
 function exportToCSV(){
   if(studentRecords.length === 0){ alert('No data to export.'); return; }
