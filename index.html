@@ -14,6 +14,18 @@
     .card { border: none; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .badge-lates { background-color: #dc3545; color: #fff; font-size: 0.85rem; }
     
+    /* Drag and Drop Zone Styles */
+    .upload-zone {
+      border: 2px dashed #0d6efd;
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+      background-color: #f0f7ff;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+    .upload-zone:hover { background-color: #e2f0ff; }
+
     /* Sorting Styles */
     th.sortable { cursor: pointer; user-select: none; }
     th.sortable:hover { background-color: #e9ecef; }
@@ -32,20 +44,24 @@
 
   <div class="container-fluid">
     <!-- Header Controls -->
-    <div class="d-flex justify-content-between align-items-center mb-4 p-3 bg-white rounded shadow-sm no-print">
+    <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-white rounded shadow-sm no-print">
       <div>
         <h3 class="m-0 fw-bold">KAMAR Detention Portal</h3>
-        <small class="text-muted">Manual Excel Upload Edition</small>
+        <small class="text-muted">Multi-File Upload Edition</small>
       </div>
       <div>
-        <label class="btn btn-primary me-2">
-          Upload Excel File(s)
-          <input type="file" id="excelFileInput" accept=".xlsx, .xls" multiple hidden onchange="handleFileUpload(event)">
-        </label>
         <button class="btn btn-info text-white me-2" onclick="refreshList()">Update List</button>
         <button class="btn btn-outline-secondary me-2" onclick="exportToCSV()">Export CSV</button>
         <button class="btn btn-outline-danger me-2" onclick="clearData()">Clear Data</button>
         <button class="btn btn-outline-dark" onclick="window.print()">Print PDF</button>
+      </div>
+    </div>
+
+    <!-- Multi-File Upload Dropzone -->
+    <div class="card p-3 mb-4 no-print">
+      <div class="upload-zone" onclick="document.getElementById('excelFileInput').click()" ondragover="handleDragOver(event)" ondrop="handleFileDrop(event)">
+        <span class="fw-bold text-primary">Click to select MULTIPLE Excel Files</span> or drag & drop files here
+        <input type="file" id="excelFileInput" accept=".xlsx, .xls" multiple onchange="handleFileUpload(event)" style="display: none;">
       </div>
     </div>
 
@@ -79,7 +95,7 @@
             </tr>
           </thead>
           <tbody id="tableBody">
-            <tr><td colspan="7" class="text-center py-4 text-muted">No records found. Click "Upload Excel File(s)" to load your files.</td></tr>
+            <tr><td colspan="7" class="text-center py-4 text-muted">No records found. Upload Excel files to load your data.</td></tr>
           </tbody>
         </table>
       </div>
@@ -94,10 +110,25 @@
 
     window.onload = () => renderTable(currentFilter);
 
-    async function handleFileUpload(event) {
-      const files = Array.from(event.target.files);
-      if (files.length === 0) return;
+    // Drag and Drop Handling
+    function handleDragOver(event) {
+      event.preventDefault();
+    }
 
+    function handleFileDrop(event) {
+      event.preventDefault();
+      if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+        processFilesArray(Array.from(event.dataTransfer.files));
+      }
+    }
+
+    function handleFileUpload(event) {
+      if (event.target.files && event.target.files.length > 0) {
+        processFilesArray(Array.from(event.target.files));
+      }
+    }
+
+    async function processFilesArray(files) {
       let totalAddedCount = 0;
 
       for (const file of files) {
@@ -108,7 +139,7 @@
       saveToStorage();
       renderTable(currentFilter);
       alert(`Processed ${files.length} file(s). Added ${totalAddedCount} new student record(s).`);
-      event.target.value = '';
+      document.getElementById('excelFileInput').value = '';
     }
 
     function parseExcelFile(file) {
@@ -150,10 +181,16 @@
         let studentId = "";
         let year = "Year 13";
         let lates = 0;
+        let isRemovedFromRoll = false;
 
         row.forEach(cell => {
           if (cell === null || cell === undefined) return;
           const strVal = cell.toString().trim();
+
+          // Check if the student is marked as 'removed from roll' anywhere in the raw data row
+          if (/removed from roll|left school|withdrawn|off roll/i.test(strVal)) {
+            isRemovedFromRoll = true;
+          }
 
           if (!studentId && /^\d{3,8}$/.test(strVal)) {
             studentId = strVal;
@@ -168,6 +205,9 @@
             if (cell > lates) lates = cell;
           }
         });
+
+        // Skip adding if student has "removed from roll" anywhere in their Excel row
+        if (isRemovedFromRoll) continue;
 
         if (studentId && name && !existingIDs.includes(studentId)) {
           const assignedDay = (studentRecords.length % 2 === 0) ? 'Tuesday' : 'Thursday';
@@ -188,7 +228,6 @@
       return addedCount;
     }
 
-    // Assign specific detention day to a student
     function setStudentDay(id, day) {
       const student = studentRecords.find(r => r.id.toString() === id.toString());
       if (student) {
@@ -198,12 +237,10 @@
       }
     }
 
-    // Refresh & Update List Trigger
     function refreshList() {
       renderTable(currentFilter);
     }
 
-    // Column Sorting
     function sortTable(column) {
       if (currentSortColumn === column) {
         isAscending = !isAscending;
@@ -231,9 +268,14 @@
       const tbody = document.getElementById('tableBody');
       tbody.innerHTML = '';
 
-      let filtered = dayFilter === 'All' 
-        ? [...studentRecords] 
-        : studentRecords.filter(r => r.day.toLowerCase() === dayFilter.toLowerCase());
+      // Filter out day selections AND filter out any student with "removed from roll" in saved comments or status
+      let filtered = studentRecords.filter(r => {
+        const hasRemovedComment = /removed from roll|left school|withdrawn|off roll/i.test(r.comments || '') ||
+                                  /removed from roll|left school|withdrawn|off roll/i.test(r.status || '');
+        if (hasRemovedComment) return false;
+
+        return dayFilter === 'All' || r.day.toLowerCase() === dayFilter.toLowerCase();
+      });
 
       if (currentSortColumn) {
         filtered.sort((a, b) => {
@@ -282,6 +324,7 @@
               <option value="Present" ${row.status === 'Present' ? 'selected' : ''}>Present</option>
               <option value="Unexcused Absence" ${row.status === 'Unexcused Absence' ? 'selected' : ''}>Unexcused Absence</option>
               <option value="Rescheduled" ${row.status === 'Rescheduled' ? 'selected' : ''}>Rescheduled</option>
+              <option value="Removed from Roll" ${row.status === 'Removed from Roll' ? 'selected' : ''}>Removed from Roll</option>
             </select>
           </td>
           <td>
@@ -298,6 +341,10 @@
       if (student) {
         student[field] = value;
         saveToStorage();
+        // Automatically hide student if marked as removed from roll
+        if (/removed from roll|left school|withdrawn|off roll/i.test(value)) {
+          renderTable(currentFilter);
+        }
       }
     }
 
