@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KAMAR Detention Management Portal</title>
   
-  <!-- CSS Framework & Excel Parser Library -->
+  <!-- Bootstrap 5 CSS & SheetJS Excel Parser -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
@@ -13,12 +13,18 @@
     body { padding: 24px; background-color: #f8f9fa; font-family: system-ui, -apple-system, sans-serif; }
     .card { border: none; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .badge-lates { background-color: #dc3545; color: #fff; font-size: 0.85rem; }
-    .badge-day { background-color: #e2e3e5; color: #41464b; }
+    
+    /* Sorting Styles */
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { background-color: #e9ecef; }
+    .sort-icon { font-size: 0.8rem; margin-left: 4px; color: #6c757d; }
+
     @media print {
       .no-print { display: none !important; }
       body { padding: 0; background: #fff; }
       .card { box-shadow: none; }
-      select, input { border: none !important; background: transparent !important; }
+      select, input, button { border: none !important; background: transparent !important; }
+      .btn-day-action { display: none !important; }
     }
   </style>
 </head>
@@ -29,20 +35,21 @@
     <div class="d-flex justify-content-between align-items-center mb-4 p-3 bg-white rounded shadow-sm no-print">
       <div>
         <h3 class="m-0 fw-bold">KAMAR Detention Portal</h3>
-        <small class="text-muted">Manual Excel Upload Edition (No Apps Script Needed)</small>
+        <small class="text-muted">Manual Excel Upload Edition</small>
       </div>
       <div>
         <label class="btn btn-primary me-2">
           Upload Excel File(s)
           <input type="file" id="excelFileInput" accept=".xlsx, .xls" multiple hidden onchange="handleFileUpload(event)">
         </label>
+        <button class="btn btn-info text-white me-2" onclick="refreshList()">Update List</button>
         <button class="btn btn-outline-secondary me-2" onclick="exportToCSV()">Export CSV</button>
         <button class="btn btn-outline-danger me-2" onclick="clearData()">Clear Data</button>
         <button class="btn btn-outline-dark" onclick="window.print()">Print PDF</button>
       </div>
     </div>
 
-    <!-- Day Filters -->
+    <!-- Filter Buttons -->
     <div class="d-flex justify-content-between align-items-center mb-3 no-print">
       <div class="btn-group" role="group">
         <button type="button" class="btn btn-outline-dark active" onclick="filterTable('All', this)">All Students</button>
@@ -52,7 +59,7 @@
       <span id="recordCount" class="text-muted small">0 student(s) loaded</span>
     </div>
 
-    <!-- Main Data Table -->
+    <!-- Data Table -->
     <div class="card p-3">
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
@@ -60,8 +67,12 @@
             <tr>
               <th>Student Name</th>
               <th>Student ID</th>
-              <th>Year</th>
-              <th>Total Lates</th>
+              <th class="sortable" onclick="sortTable('year')">
+                Year <span id="sort-year" class="sort-icon">↕</span>
+              </th>
+              <th class="sortable" onclick="sortTable('lates')">
+                Total Lates <span id="sort-lates" class="sort-icon">↕</span>
+              </th>
               <th>Assigned Day</th>
               <th style="width: 180px;">Attendance Status</th>
               <th style="width: 250px;">Officer Comments</th>
@@ -78,6 +89,8 @@
   <script>
     let studentRecords = JSON.parse(localStorage.getItem('detention_data')) || [];
     let currentFilter = 'All';
+    let currentSortColumn = null;
+    let isAscending = true;
 
     window.onload = () => renderTable(currentFilter);
 
@@ -105,13 +118,10 @@
           try {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
-
             let addedInFile = 0;
 
-            // Search across every sheet in the workbook
             workbook.SheetNames.forEach(sheetName => {
               const worksheet = workbook.Sheets[sheetName];
-              // Convert sheet to 2D array of raw values
               const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
               if (rawRows.length > 0) {
                 addedInFile += processRawRows(rawRows);
@@ -132,7 +142,6 @@
       let addedCount = 0;
       const existingIDs = studentRecords.map(r => r.id.toString());
 
-      // Read each row dynamically without relying on fixed column headers
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         if (!row || row.length < 2) continue;
@@ -146,25 +155,20 @@
           if (cell === null || cell === undefined) return;
           const strVal = cell.toString().trim();
 
-          // Match Student ID (numeric strings between 3 to 8 digits)
           if (!studentId && /^\d{3,8}$/.test(strVal)) {
             studentId = strVal;
           } 
-          // Match Student Name (letters & spaces, ignores 'year' labels)
           else if (!name && /[a-zA-Z]/.test(strVal) && strVal.length > 2 && !/year/i.test(strVal)) {
             name = strVal;
           }
-          // Match Year Group designation
           else if (/year|\b1[1-3]\b/i.test(strVal)) {
             year = strVal;
           }
-          // Extract lates count
           else if (typeof cell === 'number') {
             if (cell > lates) lates = cell;
           }
         });
 
-        // Add record if student is identified and not already present
         if (studentId && name && !existingIDs.includes(studentId)) {
           const assignedDay = (studentRecords.length % 2 === 0) ? 'Tuesday' : 'Thursday';
           studentRecords.push({
@@ -184,6 +188,36 @@
       return addedCount;
     }
 
+    // Assign specific detention day to a student
+    function setStudentDay(id, day) {
+      const student = studentRecords.find(r => r.id.toString() === id.toString());
+      if (student) {
+        student.day = day;
+        saveToStorage();
+        renderTable(currentFilter);
+      }
+    }
+
+    // Refresh & Update List Trigger
+    function refreshList() {
+      renderTable(currentFilter);
+    }
+
+    // Column Sorting
+    function sortTable(column) {
+      if (currentSortColumn === column) {
+        isAscending = !isAscending;
+      } else {
+        currentSortColumn = column;
+        isAscending = true;
+      }
+
+      document.getElementById('sort-year').innerText = column === 'year' ? (isAscending ? '▲' : '▼') : '↕';
+      document.getElementById('sort-lates').innerText = column === 'lates' ? (isAscending ? '▲' : '▼') : '↕';
+
+      renderTable(currentFilter);
+    }
+
     function filterTable(dayFilter, element) {
       currentFilter = dayFilter;
       if (element) {
@@ -197,9 +231,25 @@
       const tbody = document.getElementById('tableBody');
       tbody.innerHTML = '';
 
-      const filtered = dayFilter === 'All' 
-        ? studentRecords 
+      let filtered = dayFilter === 'All' 
+        ? [...studentRecords] 
         : studentRecords.filter(r => r.day.toLowerCase() === dayFilter.toLowerCase());
+
+      if (currentSortColumn) {
+        filtered.sort((a, b) => {
+          let valA = a[currentSortColumn];
+          let valB = b[currentSortColumn];
+
+          if (currentSortColumn === 'year') {
+            valA = parseInt(valA.toString().replace(/\D/g, '')) || 0;
+            valB = parseInt(valB.toString().replace(/\D/g, '')) || 0;
+          }
+
+          if (valA < valB) return isAscending ? -1 : 1;
+          if (valA > valB) return isAscending ? 1 : -1;
+          return 0;
+        });
+      }
 
       document.getElementById('recordCount').innerText = `${filtered.length} student(s) showing`;
 
@@ -209,13 +259,23 @@
       }
 
       filtered.forEach((row) => {
+        const isTue = row.day.toLowerCase() === 'tuesday';
+        const isThu = row.day.toLowerCase() === 'thursday';
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td><strong>${row.name}</strong></td>
           <td>${row.id}</td>
           <td>${row.year}</td>
           <td><span class="badge rounded-pill badge-lates">${row.lates}</span></td>
-          <td><span class="badge badge-day">${row.day}</span></td>
+          <td>
+            <div class="btn-group btn-group-sm btn-day-action" role="group">
+              <button type="button" class="btn ${isTue ? 'btn-primary' : 'btn-outline-primary'}" 
+                      onclick="setStudentDay('${row.id}', 'Tuesday')">Tue</button>
+              <button type="button" class="btn ${isThu ? 'btn-success' : 'btn-outline-success'}" 
+                      onclick="setStudentDay('${row.id}', 'Thursday')">Thu</button>
+            </div>
+          </td>
           <td>
             <select class="form-select form-select-sm" onchange="updateRecord('${row.id}', 'status', this.value)">
               <option value="Pending" ${row.status === 'Pending' ? 'selected' : ''}>Pending</option>
@@ -249,6 +309,7 @@
       if (confirm("Are you sure you want to clear all stored student records?")) {
         studentRecords = [];
         localStorage.removeItem('detention_data');
+        currentSortColumn = null;
         renderTable(currentFilter);
       }
     }
