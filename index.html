@@ -49,9 +49,10 @@
     <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-white rounded shadow-sm no-print">
       <div>
         <h3 class="m-0 fw-bold">KAMAR Detention Portal</h3>
-        <small class="text-muted">KAMAR Robust Import Edition</small>
+        <small class="text-muted">Auto-Assign & Checkbox Attendance Edition</small>
       </div>
       <div>
+        <button class="btn btn-warning fw-bold text-dark me-2" onclick="assignRandomStudents()">🎲 Randomly Assign 25/Day</button>
         <button class="btn btn-info text-white me-2" onclick="refreshList()">Update List</button>
         <button class="btn btn-outline-secondary me-2" onclick="exportToCSV()">Export CSV</button>
         <button class="btn btn-outline-danger me-2" onclick="clearData()">Clear Data</button>
@@ -201,57 +202,78 @@
       let addedCount = 0;
       const existingIDs = studentRecords.map(r => r.id.toString());
 
-      for (let i = 0; i < rows.length; i++) {
+      if (rows.length === 0) return 0;
+
+      let latesColIdx = -1;
+      let nameColIdx = -1;
+      let idColIdx = -1;
+      let yearColIdx = -1;
+      let headerRowIndex = -1;
+
+      for (let i = 0; i < Math.min(rows.length, 15); i++) {
+        const row = rows[i];
+        if (!row) continue;
+
+        row.forEach((cell, idx) => {
+          if (!cell) return;
+          const headerStr = cell.toString().toLowerCase().trim();
+
+          if (/total\s*number\s*of\s*lates|2026.*lates|\blates\b/i.test(headerStr)) {
+            latesColIdx = idx;
+            headerRowIndex = i;
+          }
+          if (/student\s*name|name/i.test(headerStr)) nameColIdx = idx;
+          if (/student\s*id|id\b|nsn/i.test(headerStr)) idColIdx = idx;
+          if (/year/i.test(headerStr)) yearColIdx = idx;
+        });
+
+        if (latesColIdx !== -1) break;
+      }
+
+      const startRow = headerRowIndex !== -1 ? headerRowIndex + 1 : 0;
+
+      for (let i = startRow; i < rows.length; i++) {
         const row = rows[i];
         if (!row || row.length < 2) continue;
 
-        let rawName = "";
-        let studentId = "";
-        let year = "";
+        let rawName = nameColIdx !== -1 && row[nameColIdx] ? row[nameColIdx].toString().trim() : "";
+        let studentId = idColIdx !== -1 && row[idColIdx] ? row[idColIdx].toString().trim() : "";
+        let year = yearColIdx !== -1 && row[yearColIdx] ? row[yearColIdx].toString().trim() : "";
         let lates = 0;
         let isRemovedFromRoll = false;
 
         row.forEach(cell => {
-          if (cell === null || cell === undefined) return;
-          const strVal = cell.toString().trim();
-          if (!strVal) return;
-
-          // Check if marked as removed from roll anywhere
-          if (/removed from roll|left school|withdrawn|off roll/i.test(strVal)) {
+          if (!cell) return;
+          if (/removed from roll|left school|withdrawn|off roll/i.test(cell.toString())) {
             isRemovedFromRoll = true;
-          }
-
-          // 1. Identify Student ID (3 to 8 standalone digits)
-          if (!studentId && /^\d{3,8}$/.test(strVal)) {
-            studentId = strVal;
-          } 
-          // 2. Identify Year group (Strict check for "Year X" or standalone 9-13 to prevent matching long notes)
-          else if (!year && (/^year\s*(9|10|11|12|13)$/i.test(strVal) || /^(9|10|11|12|13)$/.test(strVal))) {
-            const yNum = strVal.match(/(9|10|11|12|13)/);
-            if (yNum) year = `Year ${yNum[1]}`;
-          }
-          // 3. Identify Name (Contains letters, not long sentence notes, no year keywords)
-          else if (!rawName && /[a-zA-Z]/.test(strVal) && strVal.length >= 2 && strVal.length < 40 && !/year|\b1[0-3]\b/i.test(strVal)) {
-            // Ensure it's not a generic comment
-            if (!/attendance|contact|parents|entry|entries|email|skin|acc|rest|foot/i.test(strVal)) {
-              rawName = strVal;
-            }
-          }
-          // 4. Extract Lates Count
-          else {
-            const parsedNum = parseInt(strVal.replace(/\D/g, ''), 10);
-            if (!isNaN(parsedNum) && parsedNum > lates && parsedNum < 1000) {
-              if (strVal !== studentId && !/1[0-3]/.test(strVal)) {
-                lates = parsedNum;
-              }
-            }
           }
         });
 
         if (isRemovedFromRoll) continue;
 
-        // Fallback default year if missing
-        if (!year) year = "Year 13";
+        if (latesColIdx !== -1 && row[latesColIdx] !== undefined) {
+          const val = parseInt(row[latesColIdx].toString().replace(/\D/g, ''), 10);
+          lates = !isNaN(val) ? val : 0;
+        }
+
+        if (latesColIdx === -1 || !studentId || !rawName) {
+          row.forEach(cell => {
+            if (!cell) return;
+            const strVal = cell.toString().trim();
+            if (!studentId && /^\d{3,8}$/.test(strVal)) studentId = strVal;
+            else if (!rawName && /[a-zA-Z]/.test(strVal) && strVal.length >= 2 && strVal.length < 40 && !/year|\b1[0-3]\b/i.test(strVal)) {
+              if (!/attendance|contact|parents|entry|entries|email|skin|acc|rest|foot/i.test(strVal)) {
+                rawName = strVal;
+              }
+            }
+            else if (!year && (/^year\s*(9|10|11|12|13)$/i.test(strVal) || /^(9|10|11|12|13)$/.test(strVal))) {
+              const yNum = strVal.match(/(9|10|11|12|13)/);
+              if (yNum) year = `Year ${yNum[1]}`;
+            }
+          });
+        }
+
+        if (!year) year = "Year 11";
 
         if (studentId && rawName && !existingIDs.includes(studentId)) {
           let firstName = "";
@@ -272,7 +294,7 @@
             firstName: firstName || rawName,
             lastName: lastName || '-',
             year: year,
-            lates: parseInt(lates, 10) || 0,
+            lates: lates,
             day: 'Unassigned',
             attendance: 'None',
             comments: ''
@@ -283,6 +305,39 @@
       }
 
       return addedCount;
+    }
+
+    function assignRandomStudents() {
+      const selectedYears = Array.from(document.querySelectorAll('.year-filter:checked')).map(cb => cb.value);
+
+      let availableStudents = studentRecords.filter(r => {
+        const hasRemovedComment = /removed from roll|left school|withdrawn|off roll/i.test(r.comments || '');
+        if (hasRemovedComment || r.day !== 'Unassigned') return false;
+
+        const yearMatch = r.year.toString().match(/\b(9|10|11|12|13)\b/);
+        const yearNum = yearMatch ? yearMatch[1] : null;
+        return yearNum && selectedYears.includes(yearNum);
+      });
+
+      if (availableStudents.length === 0) {
+        return alert("No unassigned students match the currently selected Year filters.");
+      }
+
+      for (let i = availableStudents.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [availableStudents[i], availableStudents[j]] = [availableStudents[j], availableStudents[i]];
+      }
+
+      const tuesdayBatch = availableStudents.slice(0, 25);
+      const thursdayBatch = availableStudents.slice(25, 50);
+
+      tuesdayBatch.forEach(s => s.day = 'Tuesday');
+      thursdayBatch.forEach(s => s.day = 'Thursday');
+
+      saveToStorage();
+      renderTable(currentFilter);
+
+      alert(`Successfully assigned:\n• ${tuesdayBatch.length} student(s) to Tuesday\n• ${thursdayBatch.length} student(s) to Thursday`);
     }
 
     function setStudentDay(id, day) {
