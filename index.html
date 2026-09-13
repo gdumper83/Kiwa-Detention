@@ -12,9 +12,10 @@
   <style>
     body { padding: 24px; background-color: #f8f9fa; font-family: system-ui, -apple-system, sans-serif; }
     .card { border: none; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .badge-lates { background-color: #dc3545; color: #fff; font-size: 0.85rem; }
+    .badge-lates { background-color: #dc3545; color: #fff; font-size: 0.85rem; font-weight: 600; }
+    .badge-unassigned { background-color: #6c757d; color: #fff; }
     
-    /* Drag and Drop Zone Styles */
+    /* Upload Zone Styles */
     .upload-zone {
       border: 2px dashed #0d6efd;
       border-radius: 8px;
@@ -26,16 +27,18 @@
     }
     .upload-zone:hover { background-color: #e2f0ff; }
 
-    /* Sorting Styles */
-    th.sortable { cursor: pointer; user-select: none; }
-    th.sortable:hover { background-color: #e9ecef; }
-    .sort-icon { font-size: 0.8rem; margin-left: 4px; color: #6c757d; }
+    /* Sorting Header Styles */
+    th.sortable { cursor: pointer; user-select: none; transition: background-color 0.15s ease; }
+    th.sortable:hover { background-color: #e2e6ea !important; }
+    .sort-icon { font-size: 0.9rem; margin-left: 4px; color: #0d6efd; font-weight: bold; }
+
+    .attendance-check { display: flex; gap: 12px; align-items: center; }
 
     @media print {
       .no-print { display: none !important; }
       body { padding: 0; background: #fff; }
       .card { box-shadow: none; }
-      select, input, button { border: none !important; background: transparent !important; }
+      input, button { border: none !important; background: transparent !important; }
       .btn-day-action { display: none !important; }
     }
   </style>
@@ -47,7 +50,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-white rounded shadow-sm no-print">
       <div>
         <h3 class="m-0 fw-bold">KAMAR Detention Portal</h3>
-        <small class="text-muted">Multi-File Upload Edition</small>
+        <small class="text-muted">Manual Assignment & Checkbox Attendance Edition</small>
       </div>
       <div>
         <button class="btn btn-info text-white me-2" onclick="refreshList()">Update List</button>
@@ -69,6 +72,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3 no-print">
       <div class="btn-group" role="group">
         <button type="button" class="btn btn-outline-dark active" onclick="filterTable('All', this)">All Students</button>
+        <button type="button" class="btn btn-outline-dark" onclick="filterTable('Unassigned', this)">Unassigned</button>
         <button type="button" class="btn btn-outline-dark" onclick="filterTable('Tuesday', this)">Tuesday</button>
         <button type="button" class="btn btn-outline-dark" onclick="filterTable('Thursday', this)">Thursday</button>
       </div>
@@ -81,7 +85,8 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light">
             <tr>
-              <th>Student Name</th>
+              <th>First Name</th>
+              <th>Last Name</th>
               <th>Student ID</th>
               <th class="sortable" onclick="sortTable('year')">
                 Year <span id="sort-year" class="sort-icon">↕</span>
@@ -89,13 +94,13 @@
               <th class="sortable" onclick="sortTable('lates')">
                 Total Lates <span id="sort-lates" class="sort-icon">↕</span>
               </th>
-              <th>Assigned Day</th>
-              <th style="width: 180px;">Attendance Status</th>
-              <th style="width: 250px;">Officer Comments</th>
+              <th>Assign Day</th>
+              <th style="width: 170px;">Attendance</th>
+              <th style="width: 220px;">Officer Comments</th>
             </tr>
           </thead>
           <tbody id="tableBody">
-            <tr><td colspan="7" class="text-center py-4 text-muted">No records found. Upload Excel files to load your data.</td></tr>
+            <tr><td colspan="8" class="text-center py-4 text-muted">No records found. Upload Excel files to load your data.</td></tr>
           </tbody>
         </table>
       </div>
@@ -110,10 +115,7 @@
 
     window.onload = () => renderTable(currentFilter);
 
-    // Drag and Drop Handling
-    function handleDragOver(event) {
-      event.preventDefault();
-    }
+    function handleDragOver(event) { event.preventDefault(); }
 
     function handleFileDrop(event) {
       event.preventDefault();
@@ -177,7 +179,7 @@
         const row = rows[i];
         if (!row || row.length < 2) continue;
 
-        let name = "";
+        let rawName = "";
         let studentId = "";
         let year = "Year 13";
         let lates = 0;
@@ -187,7 +189,6 @@
           if (cell === null || cell === undefined) return;
           const strVal = cell.toString().trim();
 
-          // Check if the student is marked as 'removed from roll' anywhere in the raw data row
           if (/removed from roll|left school|withdrawn|off roll/i.test(strVal)) {
             isRemovedFromRoll = true;
           }
@@ -195,29 +196,47 @@
           if (!studentId && /^\d{3,8}$/.test(strVal)) {
             studentId = strVal;
           } 
-          else if (!name && /[a-zA-Z]/.test(strVal) && strVal.length > 2 && !/year/i.test(strVal)) {
-            name = strVal;
+          else if (!rawName && /[a-zA-Z]/.test(strVal) && strVal.length > 2 && !/year/i.test(strVal)) {
+            rawName = strVal;
           }
           else if (/year|\b1[1-3]\b/i.test(strVal)) {
             year = strVal;
           }
-          else if (typeof cell === 'number') {
-            if (cell > lates) lates = cell;
+          else {
+            const parsedNum = parseInt(strVal.replace(/\D/g, ''), 10);
+            if (!isNaN(parsedNum) && parsedNum > lates && parsedNum < 1000) {
+              if (strVal !== studentId && !/1[1-3]/.test(strVal)) {
+                lates = parsedNum;
+              }
+            }
           }
         });
 
-        // Skip adding if student has "removed from roll" anywhere in their Excel row
         if (isRemovedFromRoll) continue;
 
-        if (studentId && name && !existingIDs.includes(studentId)) {
-          const assignedDay = (studentRecords.length % 2 === 0) ? 'Tuesday' : 'Thursday';
+        if (studentId && rawName && !existingIDs.includes(studentId)) {
+          // Parse First & Last Name
+          let firstName = "";
+          let lastName = "";
+
+          if (rawName.includes(',')) {
+            const parts = rawName.split(',');
+            lastName = parts[0].trim();
+            firstName = parts[1] ? parts[1].trim() : '';
+          } else {
+            const parts = rawName.split(' ');
+            firstName = parts[0].trim();
+            lastName = parts.slice(1).join(' ').trim();
+          }
+
           studentRecords.push({
             id: studentId,
-            name: name,
+            firstName: firstName || rawName,
+            lastName: lastName || '',
             year: year,
-            lates: lates,
-            day: assignedDay,
-            status: 'Pending',
+            lates: parseInt(lates, 10) || 0,
+            day: 'Unassigned', // Requires manual user assignment
+            attendance: 'None', // 'Present', 'Absent', or 'None'
             comments: ''
           });
           existingIDs.push(studentId);
@@ -231,7 +250,16 @@
     function setStudentDay(id, day) {
       const student = studentRecords.find(r => r.id.toString() === id.toString());
       if (student) {
-        student.day = day;
+        student.day = (student.day === day) ? 'Unassigned' : day; // Toggle day selection
+        saveToStorage();
+        renderTable(currentFilter);
+      }
+    }
+
+    function toggleAttendance(id, type) {
+      const student = studentRecords.find(r => r.id.toString() === id.toString());
+      if (student) {
+        student.attendance = (student.attendance === type) ? 'None' : type;
         saveToStorage();
         renderTable(currentFilter);
       }
@@ -246,7 +274,7 @@
         isAscending = !isAscending;
       } else {
         currentSortColumn = column;
-        isAscending = true;
+        isAscending = column === 'lates' ? false : true;
       }
 
       document.getElementById('sort-year').innerText = column === 'year' ? (isAscending ? '▲' : '▼') : '↕';
@@ -268,13 +296,12 @@
       const tbody = document.getElementById('tableBody');
       tbody.innerHTML = '';
 
-      // Filter out day selections AND filter out any student with "removed from roll" in saved comments or status
       let filtered = studentRecords.filter(r => {
-        const hasRemovedComment = /removed from roll|left school|withdrawn|off roll/i.test(r.comments || '') ||
-                                  /removed from roll|left school|withdrawn|off roll/i.test(r.status || '');
+        const hasRemovedComment = /removed from roll|left school|withdrawn|off roll/i.test(r.comments || '');
         if (hasRemovedComment) return false;
 
-        return dayFilter === 'All' || r.day.toLowerCase() === dayFilter.toLowerCase();
+        if (dayFilter === 'All') return true;
+        return r.day.toLowerCase() === dayFilter.toLowerCase();
       });
 
       if (currentSortColumn) {
@@ -282,9 +309,12 @@
           let valA = a[currentSortColumn];
           let valB = b[currentSortColumn];
 
-          if (currentSortColumn === 'year') {
-            valA = parseInt(valA.toString().replace(/\D/g, '')) || 0;
-            valB = parseInt(valB.toString().replace(/\D/g, '')) || 0;
+          if (currentSortColumn === 'lates') {
+            valA = Number(valA) || 0;
+            valB = Number(valB) || 0;
+          } else if (currentSortColumn === 'year') {
+            valA = parseInt(valA.toString().replace(/\D/g, ''), 10) || 0;
+            valB = parseInt(valB.toString().replace(/\D/g, ''), 10) || 0;
           }
 
           if (valA < valB) return isAscending ? -1 : 1;
@@ -296,17 +326,20 @@
       document.getElementById('recordCount').innerText = `${filtered.length} student(s) showing`;
 
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No records found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No records found.</td></tr>';
         return;
       }
 
       filtered.forEach((row) => {
         const isTue = row.day.toLowerCase() === 'tuesday';
         const isThu = row.day.toLowerCase() === 'thursday';
+        const isPresent = row.attendance === 'Present';
+        const isAbsent = row.attendance === 'Absent';
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td><strong>${row.name}</strong></td>
+          <td><strong>${row.firstName}</strong></td>
+          <td><strong>${row.lastName}</strong></td>
           <td>${row.id}</td>
           <td>${row.year}</td>
           <td><span class="badge rounded-pill badge-lates">${row.lates}</span></td>
@@ -319,13 +352,18 @@
             </div>
           </td>
           <td>
-            <select class="form-select form-select-sm" onchange="updateRecord('${row.id}', 'status', this.value)">
-              <option value="Pending" ${row.status === 'Pending' ? 'selected' : ''}>Pending</option>
-              <option value="Present" ${row.status === 'Present' ? 'selected' : ''}>Present</option>
-              <option value="Unexcused Absence" ${row.status === 'Unexcused Absence' ? 'selected' : ''}>Unexcused Absence</option>
-              <option value="Rescheduled" ${row.status === 'Rescheduled' ? 'selected' : ''}>Rescheduled</option>
-              <option value="Removed from Roll" ${row.status === 'Removed from Roll' ? 'selected' : ''}>Removed from Roll</option>
-            </select>
+            <div class="attendance-check">
+              <div class="form-check form-check-inline m-0">
+                <input class="form-check-input" type="checkbox" id="pres_${row.id}" ${isPresent ? 'checked' : ''} 
+                       onclick="toggleAttendance('${row.id}', 'Present')">
+                <label class="form-check-label text-success fw-semibold" for="pres_${row.id}">Present</label>
+              </div>
+              <div class="form-check form-check-inline m-0">
+                <input class="form-check-input" type="checkbox" id="abs_${row.id}" ${isAbsent ? 'checked' : ''} 
+                       onclick="toggleAttendance('${row.id}', 'Absent')">
+                <label class="form-check-label text-danger fw-semibold" for="abs_${row.id}">Absent</label>
+              </div>
+            </div>
           </td>
           <td>
             <input type="text" class="form-control form-control-sm" value="${row.comments || ''}" 
@@ -341,7 +379,6 @@
       if (student) {
         student[field] = value;
         saveToStorage();
-        // Automatically hide student if marked as removed from roll
         if (/removed from roll|left school|withdrawn|off roll/i.test(value)) {
           renderTable(currentFilter);
         }
@@ -364,9 +401,9 @@
     function exportToCSV() {
       if (studentRecords.length === 0) return alert('No data to export.');
 
-      let csv = 'Student Name,Student ID,Year Group,Total Lates,Assigned Day,Status,Comments\n';
+      let csv = 'First Name,Last Name,Student ID,Year Group,Total Lates,Assigned Day,Attendance Status,Comments\n';
       studentRecords.forEach(r => {
-        csv += `"${r.name}","${r.id}","${r.year}","${r.lates}","${r.day}","${r.status}","${r.comments || ''}"\n`;
+        csv += `"${r.firstName}","${r.lastName}","${r.id}","${r.year}","${r.lates}","${r.day}","${r.attendance}","${r.comments || ''}"\n`;
       });
 
       const blob = new Blob([csv], { type: 'text/csv' });
