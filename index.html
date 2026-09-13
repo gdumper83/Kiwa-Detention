@@ -13,7 +13,6 @@
     body { padding: 24px; background-color: #f8f9fa; font-family: system-ui, -apple-system, sans-serif; }
     .card { border: none; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .badge-lates { background-color: #dc3545; color: #fff; font-size: 0.85rem; font-weight: 600; }
-    .badge-unassigned { background-color: #6c757d; color: #fff; }
     
     /* Upload Zone Styles */
     .upload-zone {
@@ -50,7 +49,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-white rounded shadow-sm no-print">
       <div>
         <h3 class="m-0 fw-bold">KAMAR Detention Portal</h3>
-        <small class="text-muted">Manual Assignment & Checkbox Attendance Edition</small>
+        <small class="text-muted">Filtered & Managed Detention List</small>
       </div>
       <div>
         <button class="btn btn-info text-white me-2" onclick="refreshList()">Update List</button>
@@ -61,14 +60,41 @@
     </div>
 
     <!-- Multi-File Upload Dropzone -->
-    <div class="card p-3 mb-4 no-print">
+    <div class="card p-3 mb-3 no-print">
       <div class="upload-zone" onclick="document.getElementById('excelFileInput').click()" ondragover="handleDragOver(event)" ondrop="handleFileDrop(event)">
         <span class="fw-bold text-primary">Click to select MULTIPLE Excel Files</span> or drag & drop files here
         <input type="file" id="excelFileInput" accept=".xlsx, .xls" multiple onchange="handleFileUpload(event)" style="display: none;">
       </div>
     </div>
 
-    <!-- Filter Buttons -->
+    <!-- Year Group Checkbox Filters -->
+    <div class="card p-3 mb-3 no-print">
+      <div class="d-flex align-items-center flex-wrap gap-3">
+        <span class="fw-bold text-secondary">Display Years:</span>
+        <div class="form-check">
+          <input class="form-check-input year-filter" type="checkbox" value="9" id="year9" checked onchange="renderTable(currentFilter)">
+          <label class="form-check-label" for="year9">Year 9</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input year-filter" type="checkbox" value="10" id="year10" checked onchange="renderTable(currentFilter)">
+          <label class="form-check-label" for="year10">Year 10</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input year-filter" type="checkbox" value="11" id="year11" checked onchange="renderTable(currentFilter)">
+          <label class="form-check-label" for="year11">Year 11</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input year-filter" type="checkbox" value="12" id="year12" checked onchange="renderTable(currentFilter)">
+          <label class="form-check-label" for="year12">Year 12</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input year-filter" type="checkbox" value="13" id="year13" checked onchange="renderTable(currentFilter)">
+          <label class="form-check-label" for="year13">Year 13</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter Buttons & Record Count -->
     <div class="d-flex justify-content-between align-items-center mb-3 no-print">
       <div class="btn-group" role="group">
         <button type="button" class="btn btn-outline-dark active" onclick="filterTable('All', this)">All Students</button>
@@ -95,7 +121,7 @@
                 Total Lates <span id="sort-lates" class="sort-icon">↕</span>
               </th>
               <th>Assign Day</th>
-              <th style="width: 170px;">Attendance</th>
+              <th id="th-attendance" style="width: 170px;">Attendance</th>
               <th style="width: 220px;">Officer Comments</th>
             </tr>
           </thead>
@@ -196,16 +222,17 @@
           if (!studentId && /^\d{3,8}$/.test(strVal)) {
             studentId = strVal;
           } 
-          else if (!rawName && /[a-zA-Z]/.test(strVal) && strVal.length > 2 && !/year/i.test(strVal)) {
+          else if (!rawName && /[a-zA-Z]/.test(strVal) && strVal.length >= 2 && !/year|\b1[1-3]\b/i.test(strVal)) {
             rawName = strVal;
           }
-          else if (/year|\b1[1-3]\b/i.test(strVal)) {
-            year = strVal;
+          else if (/year|\b[9]|1[0-3]\b/i.test(strVal)) {
+            const yNum = strVal.match(/\b(9|10|11|12|13)\b/);
+            year = yNum ? `Year ${yNum[1]}` : strVal;
           }
           else {
             const parsedNum = parseInt(strVal.replace(/\D/g, ''), 10);
             if (!isNaN(parsedNum) && parsedNum > lates && parsedNum < 1000) {
-              if (strVal !== studentId && !/1[1-3]/.test(strVal)) {
+              if (strVal !== studentId && !/1[0-3]/.test(strVal)) {
                 lates = parsedNum;
               }
             }
@@ -215,28 +242,27 @@
         if (isRemovedFromRoll) continue;
 
         if (studentId && rawName && !existingIDs.includes(studentId)) {
-          // Parse First & Last Name
           let firstName = "";
           let lastName = "";
 
           if (rawName.includes(',')) {
             const parts = rawName.split(',');
-            lastName = parts[0].trim();
+            lastName = parts[0] ? parts[0].trim() : '';
             firstName = parts[1] ? parts[1].trim() : '';
           } else {
-            const parts = rawName.split(' ');
-            firstName = parts[0].trim();
-            lastName = parts.slice(1).join(' ').trim();
+            const parts = rawName.trim().split(/\s+/);
+            firstName = parts[0] || '';
+            lastName = parts.slice(1).join(' ') || '';
           }
 
           studentRecords.push({
             id: studentId,
-            firstName: firstName || rawName,
-            lastName: lastName || '',
+            firstName: firstName || 'N/A',
+            lastName: lastName || 'N/A',
             year: year,
             lates: parseInt(lates, 10) || 0,
-            day: 'Unassigned', // Requires manual user assignment
-            attendance: 'None', // 'Present', 'Absent', or 'None'
+            day: 'Unassigned',
+            attendance: 'None',
             comments: ''
           });
           existingIDs.push(studentId);
@@ -250,7 +276,7 @@
     function setStudentDay(id, day) {
       const student = studentRecords.find(r => r.id.toString() === id.toString());
       if (student) {
-        student.day = (student.day === day) ? 'Unassigned' : day; // Toggle day selection
+        student.day = (student.day === day) ? 'Unassigned' : day;
         saveToStorage();
         renderTable(currentFilter);
       }
@@ -296,10 +322,24 @@
       const tbody = document.getElementById('tableBody');
       tbody.innerHTML = '';
 
+      // Determine selected year filters
+      const selectedYears = Array.from(document.querySelectorAll('.year-filter:checked')).map(cb => cb.value);
+
+      // Hide/Show attendance column header depending on the active tab
+      const isDayTab = (dayFilter === 'Tuesday' || dayFilter === 'Thursday');
+      document.getElementById('th-attendance').style.display = isDayTab ? '' : 'none';
+
       let filtered = studentRecords.filter(r => {
+        // Exclude removed students
         const hasRemovedComment = /removed from roll|left school|withdrawn|off roll/i.test(r.comments || '');
         if (hasRemovedComment) return false;
 
+        // Year Filter
+        const yearNumberMatch = r.year.toString().match(/\b(9|10|11|12|13)\b/);
+        const yearNum = yearNumberMatch ? yearNumberMatch[1] : null;
+        if (yearNum && !selectedYears.includes(yearNum)) return false;
+
+        // Day Tab Filter
         if (dayFilter === 'All') return true;
         return r.day.toLowerCase() === dayFilter.toLowerCase();
       });
@@ -326,7 +366,7 @@
       document.getElementById('recordCount').innerText = `${filtered.length} student(s) showing`;
 
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No records found.</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${isDayTab ? 8 : 7}" class="text-center py-4 text-muted">No records found.</td></tr>`;
         return;
       }
 
@@ -351,6 +391,7 @@
                       onclick="setStudentDay('${row.id}', 'Thursday')">Thu</button>
             </div>
           </td>
+          ${isDayTab ? `
           <td>
             <div class="attendance-check">
               <div class="form-check form-check-inline m-0">
@@ -364,7 +405,7 @@
                 <label class="form-check-label text-danger fw-semibold" for="abs_${row.id}">Absent</label>
               </div>
             </div>
-          </td>
+          </td>` : ''}
           <td>
             <input type="text" class="form-control form-control-sm" value="${row.comments || ''}" 
                    placeholder="Add notes..." onchange="updateRecord('${row.id}', 'comments', this.value)">
