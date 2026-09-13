@@ -1,519 +1,474 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>KAMAR Detention Management Portal</title>
-  
-  <!-- Bootstrap 5 CSS & SheetJS Excel Parser -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
-  <style>
-    body { padding: 24px; background-color: #f8f9fa; font-family: system-ui, -apple-system, sans-serif; }
-    .card { border: none; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .badge-lates { background-color: #dc3545; color: #fff; font-size: 0.85rem; font-weight: 600; }
-    
-    /* Upload Zone Styles */
-    .upload-zone {
-      border: 2px dashed #0d6efd;
-      border-radius: 8px;
-      padding: 12px;
-      text-align: center;
-      background-color: #f0f7ff;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-    }
-    .upload-zone:hover { background-color: #e2f0ff; }
-
-    /* Sorting Header Styles */
-    th.sortable { cursor: pointer; user-select: none; transition: background-color 0.15s ease; }
-    th.sortable:hover { background-color: #e2e6ea !important; }
-    .sort-icon { font-size: 0.9rem; margin-left: 4px; color: #0d6efd; font-weight: bold; }
-
-    .attendance-check { display: flex; gap: 12px; align-items: center; }
-
-    @media print {
-      .no-print { display: none !important; }
-      body { padding: 0; background: #fff; }
-      .card { box-shadow: none; }
-      input, button { border: none !important; background: transparent !important; }
-      .btn-day-action { display: none !important; }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Detention Tracker</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+  body { padding: 24px; background-color: #f8f9fa; font-family: system-ui, -apple-system, sans-serif; }
+  .card { border: none; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+  .badge-lates { background-color: #dc3545; color: #fff; font-size: 0.85rem; font-weight: 600; }
+  .upload-zone {
+    border: 2px dashed #0d6efd; border-radius: 8px; padding: 12px; text-align: center;
+    background-color: #f0f7ff; cursor: pointer; transition: background-color 0.2s ease;
+  }
+  .upload-zone:hover { background-color: #e2f0ff; }
+  th.sortable { cursor: pointer; user-select: none; transition: background-color 0.15s ease; }
+  th.sortable:hover { background-color: #e2e6ea !important; }
+  .sort-icon { font-size: 0.9rem; margin-left: 4px; color: #0d6efd; font-weight: bold; }
+  .attendance-check { display: flex; gap: 12px; align-items: center; }
+  .prior-note { font-size: 11px; color: #6c757d; max-width: 220px; display:block; }
+  #fileList { font-size: 12px; color: #6c757d; margin-top: 8px; }
+  @media print {
+    .no-print { display: none !important; }
+    body { padding: 0; background: #fff; }
+    .card { box-shadow: none; }
+    input, button { border: none !important; background: transparent !important; }
+    .btn-day-action { display: none !important; }
+  }
+</style>
 </head>
 <body>
 
-  <div class="container-fluid">
-    <!-- Header Controls -->
-    <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-white rounded shadow-sm no-print">
-      <div>
-        <h3 class="m-0 fw-bold">KAMAR Detention Portal</h3>
-        <small class="text-muted">Auto-Assign & Checkbox Attendance Edition</small>
-      </div>
-      <div>
-        <button class="btn btn-warning fw-bold text-dark me-2" onclick="assignRandomStudents()">🎲 Randomly Assign 25/Day</button>
-        <button class="btn btn-info text-white me-2" onclick="refreshList()">Update List</button>
-        <button class="btn btn-outline-secondary me-2" onclick="exportToCSV()">Export CSV</button>
-        <button class="btn btn-outline-danger me-2" onclick="clearData()">Clear Data</button>
-        <button class="btn btn-outline-dark" onclick="window.print()">Print PDF</button>
-      </div>
-    </div>
+<div class="container-fluid">
 
-    <!-- Multi-File Upload Dropzone -->
-    <div class="card p-3 mb-3 no-print">
-      <div class="upload-zone" onclick="document.getElementById('excelFileInput').click()" ondragover="handleDragOver(event)" ondrop="handleFileDrop(event)">
-        <span class="fw-bold text-primary">Click to select MULTIPLE Excel Files</span> or drag & drop files here
-        <input type="file" id="excelFileInput" accept=".xlsx, .xls" multiple onchange="handleFileUpload(event)" style="display: none;">
-      </div>
+  <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-white rounded shadow-sm no-print flex-wrap gap-2">
+    <div>
+      <h3 class="m-0 fw-bold">Detention Tracker</h3>
+      <small class="text-muted">Students with more than <span id="thresholdLabel">60</span> lates in 2026</small>
     </div>
-
-    <!-- Year Group Checkbox Filters -->
-    <div class="card p-3 mb-3 no-print">
-      <div class="d-flex align-items-center flex-wrap gap-3">
-        <span class="fw-bold text-secondary">Display Years:</span>
-        <div class="form-check">
-          <input class="form-check-input year-filter" type="checkbox" value="9" id="year9" checked onchange="renderTable(currentFilter)">
-          <label class="form-check-label" for="year9">Year 9</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input year-filter" type="checkbox" value="10" id="year10" checked onchange="renderTable(currentFilter)">
-          <label class="form-check-label" for="year10">Year 10</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input year-filter" type="checkbox" value="11" id="year11" checked onchange="renderTable(currentFilter)">
-          <label class="form-check-label" for="year11">Year 11</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input year-filter" type="checkbox" value="12" id="year12" checked onchange="renderTable(currentFilter)">
-          <label class="form-check-label" for="year12">Year 12</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input year-filter" type="checkbox" value="13" id="year13" checked onchange="renderTable(currentFilter)">
-          <label class="form-check-label" for="year13">Year 13</label>
-        </div>
-      </div>
-    </div>
-
-    <!-- Filter Buttons & Record Count -->
-    <div class="d-flex justify-content-between align-items-center mb-3 no-print">
-      <div class="btn-group" role="group">
-        <button type="button" class="btn btn-outline-dark active" onclick="filterTable('All', this)">All Students</button>
-        <button type="button" class="btn btn-outline-dark" onclick="filterTable('Unassigned', this)">Unassigned</button>
-        <button type="button" class="btn btn-outline-dark" onclick="filterTable('Tuesday', this)">Tuesday</button>
-        <button type="button" class="btn btn-outline-dark" onclick="filterTable('Thursday', this)">Thursday</button>
-      </div>
-      <span id="recordCount" class="text-muted small">0 student(s) loaded</span>
-    </div>
-
-    <!-- Data Table -->
-    <div class="card p-3">
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th>First Name</th>
-              <th>Last Name</th>
-              <th>Student ID</th>
-              <th class="sortable" onclick="sortTable('year')">
-                Year <span id="sort-year" class="sort-icon">↕</span>
-              </th>
-              <th class="sortable" onclick="sortTable('lates')">
-                Total Lates <span id="sort-lates" class="sort-icon">↕</span>
-              </th>
-              <th>Assign Day</th>
-              <th id="th-attendance" style="width: 170px;">Attendance</th>
-              <th style="width: 220px;">Officer Comments</th>
-            </tr>
-          </thead>
-          <tbody id="tableBody">
-            <tr><td colspan="8" class="text-center py-4 text-muted">No records found. Upload Excel files to load your data.</td></tr>
-          </tbody>
-        </table>
-      </div>
+    <div class="d-flex flex-wrap gap-2">
+      <button class="btn btn-warning fw-bold text-dark" onclick="randomAssign('Tuesday')">🎲 Randomly assign 25 → Tuesday</button>
+      <button class="btn btn-warning fw-bold text-dark" onclick="randomAssign('Thursday')">🎲 Randomly assign 25 → Thursday</button>
+      <button class="btn btn-outline-secondary" onclick="exportToCSV()">Export CSV</button>
+      <button class="btn btn-outline-dark" onclick="exportToPDF()">Download PDF</button>
+      <button class="btn btn-outline-danger" onclick="clearData()">Clear Data</button>
     </div>
   </div>
 
-  <script>
-    let studentRecords = JSON.parse(localStorage.getItem('detention_data')) || [];
-    let currentFilter = 'All';
-    let currentSortColumn = null;
-    let isAscending = true;
+  <div class="card p-3 mb-3 no-print">
+    <div class="upload-zone" onclick="document.getElementById('excelFileInput').click()" ondragover="handleDragOver(event)" ondrop="handleFileDrop(event)">
+      <span class="fw-bold text-primary">Click to select the attendance workbooks</span> or drag &amp; drop them here
+      <input type="file" id="excelFileInput" accept=".xlsx,.xls" multiple onchange="handleFileUpload(event)" style="display: none;">
+    </div>
+    <div id="fileList"></div>
+    <div class="d-flex align-items-end gap-3 mt-3 flex-wrap">
+      <div>
+        <label class="form-label small text-muted mb-1" for="thresholdInput">Lates threshold (greater than)</label>
+        <input type="number" class="form-control form-control-sm" id="thresholdInput" value="60" min="0" style="width:100px;">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="rebuildRoster()">Update list</button>
+      <div id="statusMsg" class="small"></div>
+    </div>
+  </div>
 
-    window.onload = () => renderTable(currentFilter);
+  <div class="card p-3 mb-3 no-print">
+    <div class="d-flex align-items-center flex-wrap gap-3">
+      <span class="fw-bold text-secondary">Display years:</span>
+      <div class="form-check" ><input class="form-check-input year-filter" type="checkbox" value="9" id="year9" checked onchange="renderTable()"><label class="form-check-label" for="year9">Year 9</label></div>
+      <div class="form-check"><input class="form-check-input year-filter" type="checkbox" value="10" id="year10" checked onchange="renderTable()"><label class="form-check-label" for="year10">Year 10</label></div>
+      <div class="form-check"><input class="form-check-input year-filter" type="checkbox" value="11" id="year11" checked onchange="renderTable()"><label class="form-check-label" for="year11">Year 11</label></div>
+      <div class="form-check"><input class="form-check-input year-filter" type="checkbox" value="12" id="year12" checked onchange="renderTable()"><label class="form-check-label" for="year12">Year 12</label></div>
+      <div class="form-check"><input class="form-check-input year-filter" type="checkbox" value="13" id="year13" checked onchange="renderTable()"><label class="form-check-label" for="year13">Year 13</label></div>
+    </div>
+  </div>
 
-    function handleDragOver(event) { event.preventDefault(); }
+  <div class="d-flex justify-content-between align-items-center mb-3 no-print flex-wrap gap-2">
+    <div class="btn-group" role="group">
+      <button type="button" class="btn btn-outline-dark active" onclick="filterTable('All', this)">All Students</button>
+      <button type="button" class="btn btn-outline-dark" onclick="filterTable('Unassigned', this)">Unassigned</button>
+      <button type="button" class="btn btn-outline-dark" onclick="filterTable('Tuesday', this)">Tuesday</button>
+      <button type="button" class="btn btn-outline-dark" onclick="filterTable('Thursday', this)">Thursday</button>
+    </div>
+    <span id="recordCount" class="text-muted small">0 student(s) loaded</span>
+  </div>
 
-    function handleFileDrop(event) {
-      event.preventDefault();
-      if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
-        processFilesArray(Array.from(event.dataTransfer.files));
-      }
+  <div class="card p-3">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>First Name</th>
+            <th>Last Name</th>
+            <th>Student ID</th>
+            <th>Tutor Class</th>
+            <th class="sortable" onclick="sortTable('year')">Year <span id="sort-year" class="sort-icon">↕</span></th>
+            <th class="sortable" onclick="sortTable('lates')">Total Lates <span id="sort-lates" class="sort-icon">↕</span></th>
+            <th>Assign Day</th>
+            <th id="th-attendance" style="width: 170px;">Attendance</th>
+            <th style="width: 220px;">Officer Comments</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <tr><td colspan="9" class="text-center py-4 text-muted">No records found. Upload attendance workbooks above.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'kamar-detention-state';
+let studentRecords = [];   // [{id, firstName, lastName, tutorClass, year, lates, priorNote, day, attendance, comments}]
+let threshold = 60;
+let loadedWorkbooks = [];  // [{name, workbook}]
+let currentFilter = 'All';
+let currentSortColumn = null;
+let isAscending = true;
+
+// ---------------- Persistence (window.storage — localStorage does not work in this environment) ----------------
+async function loadFromStorage(){
+  try{
+    const res = await window.storage.get(STORAGE_KEY, false);
+    if(res && res.value){
+      const parsed = JSON.parse(res.value);
+      studentRecords = parsed.studentRecords || [];
+      threshold = parsed.threshold || 60;
     }
+  }catch(e){ /* nothing saved yet */ }
+  document.getElementById('thresholdInput').value = threshold;
+  document.getElementById('thresholdLabel').textContent = threshold;
+  renderTable();
+}
 
-    function handleFileUpload(event) {
-      if (event.target.files && event.target.files.length > 0) {
-        processFilesArray(Array.from(event.target.files));
-      }
-    }
+let saveTimer = null;
+function saveToStorage(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try{
+      await window.storage.set(STORAGE_KEY, JSON.stringify({studentRecords, threshold}), false);
+    }catch(e){ console.error('Save failed', e); }
+  }, 200);
+}
 
-    async function processFilesArray(files) {
-      let totalAddedCount = 0;
+function setStatus(msg, kind){
+  const el = document.getElementById('statusMsg');
+  el.textContent = msg;
+  el.className = 'small ' + (kind === 'err' ? 'text-danger' : kind === 'ok' ? 'text-success' : 'text-muted');
+}
 
-      for (const file of files) {
-        const addedCount = await parseExcelFile(file);
-        totalAddedCount += addedCount;
-      }
+// ---------------- File handling ----------------
+function handleDragOver(e){ e.preventDefault(); }
+function handleFileDrop(e){
+  e.preventDefault();
+  if(e.dataTransfer.files && e.dataTransfer.files.length > 0){
+    loadFiles(Array.from(e.dataTransfer.files));
+  }
+}
+function handleFileUpload(e){
+  if(e.target.files && e.target.files.length > 0){
+    loadFiles(Array.from(e.target.files));
+  }
+}
 
-      saveToStorage();
-      renderTable(currentFilter);
-      alert(`Processed ${files.length} file(s). Added ${totalAddedCount} new student record(s).`);
-      document.getElementById('excelFileInput').value = '';
-    }
+function loadFiles(files){
+  setStatus('Reading files…');
+  const readers = files.map(file => new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try{
+        const wb = XLSX.read(e.target.result, {type:'array'});
+        loadedWorkbooks.push({name: file.name, workbook: wb});
+      }catch(err){ console.error('Failed to parse', file.name, err); }
+      resolve();
+    };
+    reader.readAsArrayBuffer(file);
+  }));
+  Promise.all(readers).then(() => {
+    document.getElementById('fileList').innerHTML = loadedWorkbooks.map(f => '• ' + f.name).join('<br>');
+    document.getElementById('excelFileInput').value = '';
+    rebuildRoster();
+  });
+}
 
-    function parseExcelFile(file) {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            let addedInFile = 0;
+// ---------------- Parsing: only trust exact column headers, never guess from cell contents ----------------
+function findCol(header, mustIncludeAll){
+  for(let i=0;i<header.length;i++){
+    const h = (header[i] || '').toString().toLowerCase();
+    if(mustIncludeAll.every(term => h.includes(term))) return i;
+  }
+  return -1;
+}
 
-            workbook.SheetNames.forEach(sheetName => {
-              const worksheet = workbook.Sheets[sheetName];
-              const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-              if (rawRows.length > 0) {
-                addedInFile += processRawRows(rawRows);
-              }
-            });
+function extractFromSheet(sheetName, rows, sourceLabel){
+  if(!rows || rows.length < 2) return [];
+  const header = rows[0].map(h => (h === undefined || h === null) ? '' : h.toString());
 
-            resolve(addedInFile);
-          } catch (err) {
-            console.error("Error reading file:", err);
-            resolve(0);
-          }
-        };
-        reader.readAsArrayBuffer(file);
-      });
-    }
+  const idxTotal = findCol(header, ['total', 'lates']);
+  if(idxTotal === -1) return []; // this sheet isn't a "number of lates" sheet — skip it entirely
 
-    function processRawRows(rows) {
-      let addedCount = 0;
-      const existingIDs = studentRecords.map(r => r.id.toString());
+  const idxId    = findCol(header, ['student', 'id']);
+  const idxLast  = findCol(header, ['last', 'name']);
+  const idxFirst = findCol(header, ['first', 'name']);
+  const idxTutor = findCol(header, ['tutor', 'class']);
+  const idxYear  = findCol(header, ['year', 'level']);
+  const idxNote  = findCol(header, ['comment']) !== -1 ? findCol(header, ['comment']) : findCol(header, ['action', 'note']);
 
-      if (rows.length === 0) return 0;
+  const leaverPattern = /left school|withdrawn|removed from roll|off roll|\bleft\b/i;
+  const out = [];
 
-      let latesColIdx = -1;
-      let nameColIdx = -1;
-      let idColIdx = -1;
-      let yearColIdx = -1;
-      let headerRowIndex = -1;
+  for(let r = 1; r < rows.length; r++){
+    const row = rows[r];
+    if(!row) continue;
+    const last = idxLast !== -1 ? row[idxLast] : '';
+    const first = idxFirst !== -1 ? row[idxFirst] : '';
+    const rawId = idxId !== -1 ? row[idxId] : null;
+    if(!rawId && !last && !first) continue; // blank row
 
-      for (let i = 0; i < Math.min(rows.length, 15); i++) {
-        const row = rows[i];
-        if (!row) continue;
+    const totalRaw = idxTotal !== -1 ? row[idxTotal] : null;
+    const total = (totalRaw === null || totalRaw === undefined || totalRaw === '') ? null : Number(totalRaw);
+    if(total === null || Number.isNaN(total)) continue;
 
-        row.forEach((cell, idx) => {
-          if (!cell) return;
-          const headerStr = cell.toString().toLowerCase().trim();
+    const priorNote = idxNote !== -1 ? (row[idxNote] || '').toString().trim() : '';
+    if(leaverPattern.test(priorNote)) continue; // dean's note says the student has left — exclude
 
-          if (/total\s*number\s*of\s*lates|2026.*lates|\blates\b/i.test(headerStr)) {
-            latesColIdx = idx;
-            headerRowIndex = i;
-          }
-          if (/student\s*name|name/i.test(headerStr)) nameColIdx = idx;
-          if (/student\s*id|id\b|nsn/i.test(headerStr)) idColIdx = idx;
-          if (/year/i.test(headerStr)) yearColIdx = idx;
-        });
+    const yearRaw = idxYear !== -1 ? row[idxYear] : '';
+    const yearNum = parseInt(String(yearRaw).replace(/\D/g, ''), 10) || null;
 
-        if (latesColIdx !== -1) break;
-      }
+    out.push({
+      id: rawId !== null && rawId !== undefined ? String(rawId).trim() : ((last||'')+(first||'')),
+      firstName: (first || '').toString().trim(),
+      lastName: (last || '').toString().trim(),
+      tutorClass: idxTutor !== -1 ? (row[idxTutor] || '').toString().trim() : '',
+      year: yearNum,
+      lates: total,
+      priorNote: priorNote,
+      source: sourceLabel + ' — ' + sheetName
+    });
+  }
+  return out;
+}
 
-      const startRow = headerRowIndex !== -1 ? headerRowIndex + 1 : 0;
+function parseWorkbook(name, workbook){
+  let students = [];
+  workbook.SheetNames.forEach(sn => {
+    const ws = workbook.Sheets[sn];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+    students = students.concat(extractFromSheet(sn, rows, name));
+  });
+  return students;
+}
 
-      for (let i = startRow; i < rows.length; i++) {
-        const row = rows[i];
-        if (!row || row.length < 2) continue;
+function rebuildRoster(){
+  threshold = Number(document.getElementById('thresholdInput').value) || 0;
+  document.getElementById('thresholdLabel').textContent = threshold;
 
-        let rawName = nameColIdx !== -1 && row[nameColIdx] ? row[nameColIdx].toString().trim() : "";
-        let studentId = idColIdx !== -1 && row[idColIdx] ? row[idColIdx].toString().trim() : "";
-        let year = yearColIdx !== -1 && row[yearColIdx] ? row[yearColIdx].toString().trim() : "";
-        let lates = 0;
-        let isRemovedFromRoll = false;
+  if(loadedWorkbooks.length === 0){
+    setStatus('Load at least one workbook first.', 'err');
+    return;
+  }
 
-        row.forEach(cell => {
-          if (!cell) return;
-          if (/removed from roll|left school|withdrawn|off roll/i.test(cell.toString())) {
-            isRemovedFromRoll = true;
-          }
-        });
+  // preserve existing day/attendance/comments assignments, keyed by student id
+  const existingById = {};
+  studentRecords.forEach(s => { existingById[s.id] = {day: s.day, attendance: s.attendance, comments: s.comments}; });
 
-        if (isRemovedFromRoll) continue;
+  let all = [];
+  loadedWorkbooks.forEach(f => { all = all.concat(parseWorkbook(f.name, f.workbook)); });
 
-        if (latesColIdx !== -1 && row[latesColIdx] !== undefined) {
-          const val = parseInt(row[latesColIdx].toString().replace(/\D/g, ''), 10);
-          lates = !isNaN(val) ? val : 0;
-        }
+  const byId = {};
+  all.forEach(s => {
+    if(!byId[s.id] || s.lates > byId[s.id].lates) byId[s.id] = s;
+  });
 
-        if (latesColIdx === -1 || !studentId || !rawName) {
-          row.forEach(cell => {
-            if (!cell) return;
-            const strVal = cell.toString().trim();
-            if (!studentId && /^\d{3,8}$/.test(strVal)) studentId = strVal;
-            else if (!rawName && /[a-zA-Z]/.test(strVal) && strVal.length >= 2 && strVal.length < 40 && !/year|\b1[0-3]\b/i.test(strVal)) {
-              if (!/attendance|contact|parents|entry|entries|email|skin|acc|rest|foot/i.test(strVal)) {
-                rawName = strVal;
-              }
-            }
-            else if (!year && (/^year\s*(9|10|11|12|13)$/i.test(strVal) || /^(9|10|11|12|13)$/.test(strVal))) {
-              const yNum = strVal.match(/(9|10|11|12|13)/);
-              if (yNum) year = `Year ${yNum[1]}`;
-            }
-          });
-        }
+  const filtered = Object.values(byId).filter(s => s.lates > threshold);
+  filtered.forEach(s => {
+    const prev = existingById[s.id];
+    s.day = prev ? prev.day : 'Unassigned';
+    s.attendance = prev ? prev.attendance : 'None';
+    s.comments = prev ? prev.comments : '';
+  });
 
-        if (!year) year = "Year 11";
+  studentRecords = filtered;
+  saveToStorage();
+  renderTable();
 
-        if (studentId && rawName && !existingIDs.includes(studentId)) {
-          let firstName = "";
-          let lastName = "";
+  if(filtered.length === 0){
+    setStatus('No students found above the threshold in the loaded files.', 'err');
+  } else {
+    setStatus(`Loaded ${filtered.length} student(s) with more than ${threshold} lates.`, 'ok');
+  }
+}
 
-          if (rawName.includes(',')) {
-            const parts = rawName.split(',');
-            lastName = parts[0] ? parts[0].trim() : '';
-            firstName = parts[1] ? parts[1].trim() : '';
-          } else {
-            const parts = rawName.trim().split(/\s+/);
-            firstName = parts[0] || '';
-            lastName = parts.slice(1).join(' ') || '';
-          }
+// ---------------- Assignment ----------------
+function randomAssign(day){
+  const selectedYears = Array.from(document.querySelectorAll('.year-filter:checked')).map(cb => cb.value);
+  let pool = studentRecords.filter(r => r.day === 'Unassigned' && (!r.year || selectedYears.includes(String(r.year))));
 
-          studentRecords.push({
-            id: studentId,
-            firstName: firstName || rawName,
-            lastName: lastName || '-',
-            year: year,
-            lates: lates,
-            day: 'Unassigned',
-            attendance: 'None',
-            comments: ''
-          });
-          existingIDs.push(studentId);
-          addedCount++;
-        }
-      }
+  for(let i = pool.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const batch = pool.slice(0, 25);
+  if(batch.length === 0){
+    alert('No unassigned students match the currently selected year filters.');
+    return;
+  }
+  batch.forEach(s => { s.day = day; });
+  saveToStorage();
+  renderTable();
+  alert(`Randomly assigned ${batch.length} student(s) to ${day}.`);
+}
 
-      return addedCount;
-    }
+function setStudentDay(id, day){
+  const s = studentRecords.find(r => r.id === id);
+  if(s){
+    s.day = (s.day === day) ? 'Unassigned' : day;
+    saveToStorage();
+    renderTable();
+  }
+}
 
-    function assignRandomStudents() {
-      const selectedYears = Array.from(document.querySelectorAll('.year-filter:checked')).map(cb => cb.value);
+function toggleAttendance(id, type){
+  const s = studentRecords.find(r => r.id === id);
+  if(s){
+    s.attendance = (s.attendance === type) ? 'None' : type;
+    saveToStorage();
+    renderTable();
+  }
+}
 
-      let availableStudents = studentRecords.filter(r => {
-        const hasRemovedComment = /removed from roll|left school|withdrawn|off roll/i.test(r.comments || '');
-        if (hasRemovedComment || r.day !== 'Unassigned') return false;
+function updateComment(id, value){
+  const s = studentRecords.find(r => r.id === id);
+  if(s){ s.comments = value; saveToStorage(); }
+}
 
-        const yearMatch = r.year.toString().match(/\b(9|10|11|12|13)\b/);
-        const yearNum = yearMatch ? yearMatch[1] : null;
-        return yearNum && selectedYears.includes(yearNum);
-      });
+// ---------------- Filtering / sorting / rendering ----------------
+function filterTable(f, el){
+  currentFilter = f;
+  if(el){
+    document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+  }
+  renderTable();
+}
 
-      if (availableStudents.length === 0) {
-        return alert("No unassigned students match the currently selected Year filters.");
-      }
+function sortTable(col){
+  if(currentSortColumn === col){ isAscending = !isAscending; }
+  else{ currentSortColumn = col; isAscending = col !== 'lates'; }
+  document.getElementById('sort-year').innerText = col === 'year' ? (isAscending ? '▲' : '▼') : '↕';
+  document.getElementById('sort-lates').innerText = col === 'lates' ? (isAscending ? '▲' : '▼') : '↕';
+  renderTable();
+}
 
-      for (let i = availableStudents.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [availableStudents[i], availableStudents[j]] = [availableStudents[j], availableStudents[i]];
-      }
+function renderTable(){
+  const tbody = document.getElementById('tableBody');
+  const selectedYears = Array.from(document.querySelectorAll('.year-filter:checked')).map(cb => cb.value);
+  const isDayTab = (currentFilter === 'Tuesday' || currentFilter === 'Thursday');
+  document.getElementById('th-attendance').style.display = isDayTab ? '' : 'none';
 
-      const tuesdayBatch = availableStudents.slice(0, 25);
-      const thursdayBatch = availableStudents.slice(25, 50);
+  let filtered = studentRecords.filter(r => {
+    if(r.year && !selectedYears.includes(String(r.year))) return false;
+    if(currentFilter === 'All') return true;
+    if(currentFilter === 'Unassigned') return r.day === 'Unassigned';
+    return r.day === currentFilter;
+  });
 
-      tuesdayBatch.forEach(s => s.day = 'Tuesday');
-      thursdayBatch.forEach(s => s.day = 'Thursday');
+  if(currentSortColumn){
+    filtered = filtered.slice().sort((a,b) => {
+      let valA = currentSortColumn === 'year' ? (a.year || 0) : (a.lates || 0);
+      let valB = currentSortColumn === 'year' ? (b.year || 0) : (b.lates || 0);
+      if(valA < valB) return isAscending ? -1 : 1;
+      if(valA > valB) return isAscending ? 1 : -1;
+      return 0;
+    });
+  }
 
-      saveToStorage();
-      renderTable(currentFilter);
+  document.getElementById('recordCount').innerText = `${filtered.length} student(s) showing (${studentRecords.length} total loaded)`;
 
-      alert(`Successfully assigned:\n• ${tuesdayBatch.length} student(s) to Tuesday\n• ${thursdayBatch.length} student(s) to Thursday`);
-    }
+  if(filtered.length === 0){
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-muted">No records found.</td></tr>`;
+    return;
+  }
 
-    function setStudentDay(id, day) {
-      const student = studentRecords.find(r => r.id.toString() === id.toString());
-      if (student) {
-        student.day = (student.day === day) ? 'Unassigned' : day;
-        saveToStorage();
-        renderTable(currentFilter);
-      }
-    }
+  tbody.innerHTML = filtered.map(row => {
+    const isTue = row.day === 'Tuesday';
+    const isThu = row.day === 'Thursday';
+    const isPresent = row.attendance === 'Present';
+    const isAbsent = row.attendance === 'Absent';
+    return `<tr>
+      <td><strong>${escapeHtml(row.firstName) || 'N/A'}</strong></td>
+      <td><strong>${escapeHtml(row.lastName) || 'N/A'}</strong></td>
+      <td>${escapeHtml(row.id)}</td>
+      <td>${escapeHtml(row.tutorClass)}</td>
+      <td>${row.year || '—'}</td>
+      <td><span class="badge rounded-pill badge-lates">${row.lates}</span></td>
+      <td>
+        <div class="btn-group btn-group-sm btn-day-action" role="group">
+          <button type="button" class="btn ${isTue ? 'btn-primary' : 'btn-outline-primary'}" onclick="setStudentDay('${row.id}', 'Tuesday')">Tue</button>
+          <button type="button" class="btn ${isThu ? 'btn-success' : 'btn-outline-success'}" onclick="setStudentDay('${row.id}', 'Thursday')">Thu</button>
+        </div>
+      </td>
+      ${isDayTab ? `<td>
+        <div class="attendance-check">
+          <div class="form-check form-check-inline m-0">
+            <input class="form-check-input" type="checkbox" id="pres_${row.id}" ${isPresent ? 'checked' : ''} onclick="toggleAttendance('${row.id}', 'Present')">
+            <label class="form-check-label text-success fw-semibold" for="pres_${row.id}">Present</label>
+          </div>
+          <div class="form-check form-check-inline m-0">
+            <input class="form-check-input" type="checkbox" id="abs_${row.id}" ${isAbsent ? 'checked' : ''} onclick="toggleAttendance('${row.id}', 'Absent')">
+            <label class="form-check-label text-danger fw-semibold" for="abs_${row.id}">Absent</label>
+          </div>
+        </div>
+      </td>` : ''}
+      <td>
+        ${row.priorNote ? `<span class="prior-note" title="${escapeHtml(row.priorNote)}">Dean's note: ${escapeHtml(truncate(row.priorNote, 60))}</span>` : ''}
+        <input type="text" class="form-control form-control-sm mt-1" value="${escapeHtml(row.comments || '')}" placeholder="Add notes..." onchange="updateComment('${row.id}', this.value)">
+      </td>
+    </tr>`;
+  }).join('');
+}
 
-    function toggleAttendance(id, type) {
-      const student = studentRecords.find(r => r.id.toString() === id.toString());
-      if (student) {
-        student.attendance = (student.attendance === type) ? 'None' : type;
-        saveToStorage();
-        renderTable(currentFilter);
-      }
-    }
+function escapeHtml(str){
+  return (str || '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function truncate(str, n){
+  str = (str || '').toString();
+  return str.length > n ? str.slice(0,n) + '…' : str;
+}
 
-    function refreshList() {
-      renderTable(currentFilter);
-    }
+// ---------------- Export ----------------
+function clearData(){
+  if(!confirm('Clear all loaded students, day assignments, attendance and comments?')) return;
+  studentRecords = [];
+  loadedWorkbooks = [];
+  document.getElementById('fileList').innerHTML = '';
+  currentSortColumn = null;
+  saveToStorage();
+  renderTable();
+  setStatus('All data cleared.', 'ok');
+}
 
-    function sortTable(column) {
-      if (currentSortColumn === column) {
-        isAscending = !isAscending;
-      } else {
-        currentSortColumn = column;
-        isAscending = column === 'lates' ? false : true;
-      }
+function exportRows(){
+  return studentRecords.map(r => [r.firstName, r.lastName, r.id, r.tutorClass, r.year || '', r.lates, r.day, r.attendance, r.comments || '']);
+}
+const EXPORT_HEADER = ['First Name','Last Name','Student ID','Tutor Class','Year','Total Lates','Assigned Day','Attendance','Comments'];
 
-      document.getElementById('sort-year').innerText = column === 'year' ? (isAscending ? '▲' : '▼') : '↕';
-      document.getElementById('sort-lates').innerText = column === 'lates' ? (isAscending ? '▲' : '▼') : '↕';
+function exportToCSV(){
+  if(studentRecords.length === 0){ alert('No data to export.'); return; }
+  const csvEscape = v => { const s = (v===null||v===undefined)?'':String(v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+  const lines = [EXPORT_HEADER, ...exportRows()].map(r => r.map(csvEscape).join(','));
+  const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `Detention_Report_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
 
-      renderTable(currentFilter);
-    }
+function exportToPDF(){
+  if(studentRecords.length === 0){ alert('No data to export.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation: 'landscape'});
+  doc.setFontSize(14);
+  doc.text('Detention List — students with more than ' + threshold + ' lates', 14, 14);
+  doc.autoTable({ head: [EXPORT_HEADER], body: exportRows(), startY: 20, styles: {fontSize: 8}, headStyles: {fillColor: [13,110,253]} });
+  doc.save(`Detention_Report_${new Date().toISOString().slice(0,10)}.pdf`);
+}
 
-    function filterTable(dayFilter, element) {
-      currentFilter = dayFilter;
-      if (element) {
-        document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
-        element.classList.add('active');
-      }
-      renderTable(dayFilter);
-    }
-
-    function renderTable(dayFilter) {
-      const tbody = document.getElementById('tableBody');
-      tbody.innerHTML = '';
-
-      const selectedYears = Array.from(document.querySelectorAll('.year-filter:checked')).map(cb => cb.value);
-      const isDayTab = (dayFilter === 'Tuesday' || dayFilter === 'Thursday');
-      document.getElementById('th-attendance').style.display = isDayTab ? '' : 'none';
-
-      let filtered = studentRecords.filter(r => {
-        const hasRemovedComment = /removed from roll|left school|withdrawn|off roll/i.test(r.comments || '');
-        if (hasRemovedComment) return false;
-
-        const yearNumberMatch = r.year.toString().match(/\b(9|10|11|12|13)\b/);
-        const yearNum = yearNumberMatch ? yearNumberMatch[1] : null;
-        if (yearNum && !selectedYears.includes(yearNum)) return false;
-
-        if (dayFilter === 'All') return true;
-        return r.day.toLowerCase() === dayFilter.toLowerCase();
-      });
-
-      if (currentSortColumn) {
-        filtered.sort((a, b) => {
-          let valA = a[currentSortColumn];
-          let valB = b[currentSortColumn];
-
-          if (currentSortColumn === 'lates') {
-            valA = Number(valA) || 0;
-            valB = Number(valB) || 0;
-          } else if (currentSortColumn === 'year') {
-            valA = parseInt(valA.toString().replace(/\D/g, ''), 10) || 0;
-            valB = parseInt(valB.toString().replace(/\D/g, ''), 10) || 0;
-          }
-
-          if (valA < valB) return isAscending ? -1 : 1;
-          if (valA > valB) return isAscending ? 1 : -1;
-          return 0;
-        });
-      }
-
-      document.getElementById('recordCount').innerText = `${filtered.length} student(s) showing`;
-
-      if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${isDayTab ? 8 : 7}" class="text-center py-4 text-muted">No records found.</td></tr>`;
-        return;
-      }
-
-      filtered.forEach((row) => {
-        const isTue = row.day.toLowerCase() === 'tuesday';
-        const isThu = row.day.toLowerCase() === 'thursday';
-        const isPresent = row.attendance === 'Present';
-        const isAbsent = row.attendance === 'Absent';
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><strong>${row.firstName || 'N/A'}</strong></td>
-          <td><strong>${row.lastName || 'N/A'}</strong></td>
-          <td>${row.id}</td>
-          <td>${row.year}</td>
-          <td><span class="badge rounded-pill badge-lates">${row.lates}</span></td>
-          <td>
-            <div class="btn-group btn-group-sm btn-day-action" role="group">
-              <button type="button" class="btn ${isTue ? 'btn-primary' : 'btn-outline-primary'}" 
-                      onclick="setStudentDay('${row.id}', 'Tuesday')">Tue</button>
-              <button type="button" class="btn ${isThu ? 'btn-success' : 'btn-outline-success'}" 
-                      onclick="setStudentDay('${row.id}', 'Thursday')">Thu</button>
-            </div>
-          </td>
-          ${isDayTab ? `
-          <td>
-            <div class="attendance-check">
-              <div class="form-check form-check-inline m-0">
-                <input class="form-check-input" type="checkbox" id="pres_${row.id}" ${isPresent ? 'checked' : ''} 
-                       onclick="toggleAttendance('${row.id}', 'Present')">
-                <label class="form-check-label text-success fw-semibold" for="pres_${row.id}">Present</label>
-              </div>
-              <div class="form-check form-check-inline m-0">
-                <input class="form-check-input" type="checkbox" id="abs_${row.id}" ${isAbsent ? 'checked' : ''} 
-                       onclick="toggleAttendance('${row.id}', 'Absent')">
-                <label class="form-check-label text-danger fw-semibold" for="abs_${row.id}">Absent</label>
-              </div>
-            </div>
-          </td>` : ''}
-          <td>
-            <input type="text" class="form-control form-control-sm" value="${row.comments || ''}" 
-                   placeholder="Add notes..." onchange="updateRecord('${row.id}', 'comments', this.value)">
-          </td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-
-    function updateRecord(id, field, value) {
-      const student = studentRecords.find(r => r.id.toString() === id.toString());
-      if (student) {
-        student[field] = value;
-        saveToStorage();
-        if (/removed from roll|left school|withdrawn|off roll/i.test(value)) {
-          renderTable(currentFilter);
-        }
-      }
-    }
-
-    function saveToStorage() {
-      localStorage.setItem('detention_data', JSON.stringify(studentRecords));
-    }
-
-    function clearData() {
-      if (confirm("Are you sure you want to clear all stored student records?")) {
-        studentRecords = [];
-        localStorage.removeItem('detention_data');
-        currentSortColumn = null;
-        renderTable(currentFilter);
-      }
-    }
-
-    function exportToCSV() {
-      if (studentRecords.length === 0) return alert('No data to export.');
-
-      let csv = 'First Name,Last Name,Student ID,Year Group,Total Lates,Assigned Day,Attendance Status,Comments\n';
-      studentRecords.forEach(r => {
-        csv += `"${r.firstName}","${r.lastName}","${r.id}","${r.year}","${r.lates}","${r.day}","${r.attendance}","${r.comments || ''}"\n`;
-      });
-
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `Detention_Report_${new Date().toISOString().slice(0,10)}.csv`;
-      a.click();
-    }
-  </script>
+loadFromStorage();
+</script>
 </body>
 </html>
